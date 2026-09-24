@@ -1,6 +1,6 @@
 [Setup]
 AppName=SMF YT Downloader
-AppVersion=1.0.0
+AppVersion=1.0.1
 DefaultDirName={autopf}\SMF YT Downloader
 DefaultGroupName=SMF YT Downloader
 OutputDir=output
@@ -15,8 +15,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 Source: "..\dist\SMF_YT_Downloader.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\SMF YT Downloader"; Filename: "{app}\SMF YT Downloader.exe"
-Name: "{autodesktop}\SMF YT Downloader"; Filename: "{app}\SMF YT Downloader.exe"
+Name: "{autoprograms}\SMF YT Downloader"; Filename: "{app}\SMF_YT_Downloader.exe"
+Name: "{autodesktop}\SMF YT Downloader"; Filename: "{app}\SMF_YT_Downloader.exe"
 
 [Run]
-Filename: "{app}\SMF YT Downloader.exe"; Description: "Launch SMF YT Downloader"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\SMF_YT_Downloader.exe"; Description: "Launch SMF YT Downloader"; Flags: nowait postinstall skipifsilent
