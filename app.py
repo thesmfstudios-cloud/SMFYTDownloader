@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import threading
+import shutil
 from pathlib import Path
 
 import imageio_ffmpeg
@@ -38,10 +39,41 @@ def resource_path(name: str) -> str:
 
 
 def ffmpeg_path() -> str | None:
-    bundled = resource_path(os.path.join("ffmpeg", "ffmpeg.exe"))
-    if os.path.exists(bundled):
-        return bundled
-    return shutil.which("ffmpeg") if "shutil" in globals() else None
+    # Prefer the FFmpeg binary shipped inside imageio-ffmpeg/PyInstaller.
+    # Do not blindly traverse PATH: some Windows environments contain
+    # virtual/untrusted mount entries that can raise WinError 448.
+    candidates = []
+
+    try:
+        package_dir = Path(imageio_ffmpeg.__file__).resolve().parent
+        candidates.extend(package_dir.glob("binaries/ffmpeg*.exe"))
+    except Exception:
+        pass
+
+    try:
+        bundled = imageio_ffmpeg.get_ffmpeg_exe()
+        if bundled:
+            candidates.append(Path(bundled))
+    except Exception:
+        pass
+
+    for candidate in candidates:
+        try:
+            candidate = candidate.resolve()
+            if candidate.is_file() and "cua-driver" not in str(candidate).lower():
+                return str(candidate)
+        except OSError:
+            continue
+
+    # Final fallback only when PATH lookup is safe.
+    try:
+        fallback = shutil.which("ffmpeg")
+        if fallback and "cua-driver" not in fallback.lower():
+            return fallback
+    except OSError:
+        pass
+
+    return None
 
 
 def seconds_from_hms(value: str) -> float:
@@ -115,15 +147,15 @@ class DownloadWorker(QThread):
 
     def run(self):
         try:
-            ff = imageio_ffmpeg.get_ffmpeg_exe()
-            if not ff or not os.path.exists(ff):
-                raise RuntimeError("FFmpeg was not found.")
+            ff = ffmpeg_path()
+            if not ff:
+                raise RuntimeError("FFmpeg was not found. The bundled FFmpeg runtime could not be located.")
 
             ydl_opts = {
                 "outtmpl": os.path.join(self.folder, "%(title)s.%(ext)s"),
                 "noplaylist": True,
                 "progress_hooks": [self._hook],
-                "ffmpeg_location": os.path.dirname(ff),
+                "ffmpeg_location": ff,
                 "quiet": True,
                 "no_warnings": True,
                 "retries": 5,
@@ -303,7 +335,7 @@ class SMFWindow(QWidget):
         header.addLayout(title_box)
         header.addStretch()
 
-        version = self.label("v1.0", 9, "#e9d2ff", True)
+        version = self.label("v1.0.2", 9, "#e9d2ff", True)
         version.setStyleSheet("background:#31105d; color:#e9d2ff; padding:4px 9px; border-radius:9px;")
         header.addWidget(version)
         header.addSpacing(18)
