@@ -1,6 +1,6 @@
 [Setup]
 AppName=SMF YT Downloader
-AppVersion=1.0.2
+AppVersion=1.0.3
 DefaultDirName={autopf}\SMF YT Downloader
 DefaultGroupName=SMF YT Downloader
 OutputDir=output
