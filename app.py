@@ -4,6 +4,8 @@ import time
 import threading
 from pathlib import Path
 
+import imageio_ffmpeg
+
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtGui import QFont, QIcon, QPainter, QPixmap, QColor
 from PySide6.QtWidgets import (
@@ -113,11 +115,8 @@ class DownloadWorker(QThread):
 
     def run(self):
         try:
-            ff = resource_path(os.path.join("ffmpeg", "ffmpeg.exe"))
-            if not os.path.exists(ff):
-                import shutil
-                ff = shutil.which("ffmpeg")
-            if not ff:
+            ff = imageio_ffmpeg.get_ffmpeg_exe()
+            if not ff or not os.path.exists(ff):
                 raise RuntimeError("FFmpeg was not found.")
 
             ydl_opts = {
