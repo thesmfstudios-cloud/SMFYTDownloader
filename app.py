@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
 )
 
 import yt_dlp
-from yt_dlp.utils import download_range_func
 
 
 APP_NAME = "SMF YT Downloader"
@@ -199,10 +198,10 @@ class DownloadWorker(QThread):
                 if self.clip_start_sec < 0 or end_sec <= self.clip_start_sec:
                     raise ValueError("End time must be greater than start time.")
                 self.clip_duration = end_sec - self.clip_start_sec
-                ydl_opts["download_ranges"] = download_range_func(
-                    None, [(self.clip_start_sec, end_sec)]
-                )
-                ydl_opts["force_keyframes_at_cuts"] = True
+                # Reliability-first design: custom mode downloads the selected
+                # source stream completely, then FFmpeg performs the exact
+                # start/end trim. This avoids fragment-boundary and timestamp
+                # inconsistencies across YouTube formats.
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(self.url, download=False)
