@@ -1,0 +1,48 @@
+name: Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build application
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name "SMF_YT_Downloader" app.py
+
+      - name: Install FFmpeg
+        shell: powershell
+        run: |
+          choco install ffmpeg -y
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          choco install innosetup -y
+
+      - name: Build installer
+        shell: cmd
+        run: |
+          iscc installer\SMF_YT_Downloader.iss
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SMF-YT-Downloader-Windows-Installer
+          path: installer\output\SMF_YT_Downloader_Setup.exe
