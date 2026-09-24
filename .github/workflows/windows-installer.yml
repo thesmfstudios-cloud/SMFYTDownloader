@@ -21,21 +21,10 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Download FFmpeg
-        shell: powershell
-        run: |
-          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
-          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_extract
-          New-Item -ItemType Directory -Force ffmpeg | Out-Null
-          $bin = Get-ChildItem -Path ffmpeg_extract -Recurse -Filter ffmpeg.exe | Select-Object -First 1
-          $probe = Get-ChildItem -Path ffmpeg_extract -Recurse -Filter ffprobe.exe | Select-Object -First 1
-          Copy-Item $bin.FullName ffmpeg\ffmpeg.exe
-          Copy-Item $probe.FullName ffmpeg\ffprobe.exe
-
       - name: Build Windows EXE
         shell: cmd
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name "SMF_YT_Downloader" --add-binary "ffmpeg\ffmpeg.exe;ffmpeg" --add-binary "ffmpeg\ffprobe.exe;ffmpeg" app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name "SMF_YT_Downloader" --collect-all imageio_ffmpeg app.py
 
       - name: Build installer
         shell: powershell
