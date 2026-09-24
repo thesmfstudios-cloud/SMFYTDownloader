@@ -111,6 +111,9 @@ class DownloadWorker(QThread):
         self.end_time = end_time
         self.folder = folder
         self.cancel_requested = False
+        self.current_process = None
+        self.clip_start_sec = 0.0
+        self.clip_duration = 0.0
 
     def cancel(self):
         self.cancel_requested = True
@@ -191,11 +194,14 @@ class DownloadWorker(QThread):
                 })
 
             if self.custom:
-                start_sec = seconds_from_hms(self.start_time or "00:00:00")
+                self.clip_start_sec = seconds_from_hms(self.start_time or "00:00:00")
                 end_sec = seconds_from_hms(self.end_time)
-                if end_sec <= start_sec:
+                if self.clip_start_sec < 0 or end_sec <= self.clip_start_sec:
                     raise ValueError("End time must be greater than start time.")
-                ydl_opts["download_ranges"] = download_range_func(None, [(start_sec, end_sec)])
+                self.clip_duration = end_sec - self.clip_start_sec
+                ydl_opts["download_ranges"] = download_range_func(
+                    None, [(self.clip_start_sec, end_sec)]
+                )
                 ydl_opts["force_keyframes_at_cuts"] = True
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -228,26 +234,58 @@ class DownloadWorker(QThread):
             source = max(media_files, key=lambda p: p.stat().st_size)
             safe_title = re.sub(r'[<>:"/\\|?*]', "_", title).strip(" .") or "SMF_YT_Downloader"
 
+            # yt-dlp normally returns the requested section when download_ranges is used.
+            # For reliability, detect whether the temporary file is already a clip or a full source.
+            # Then force the final output to the exact requested duration.
+            source_duration = self._probe_duration(ff, source)
+
             if self.mode == "MP3":
                 final_path = Path(self.folder) / f"{safe_title}.mp3"
-                if source.suffix.lower() == ".mp3":
+                if self.custom:
+                    input_start = 0.0 if source_duration <= self.clip_duration + 2.0 else self.clip_start_sec
+                    self._run_ffmpeg(
+                        ff,
+                        [
+                            "-y", "-ss", f"{input_start:.3f}", "-i", str(source),
+                            "-t", f"{self.clip_duration:.3f}",
+                            "-vn", "-c:a", "libmp3lame", "-q:a", "0",
+                            str(final_path)
+                        ],
+                        duration=self.clip_duration,
+                    )
+                elif source.suffix.lower() == ".mp3":
                     shutil.move(str(source), str(final_path))
                 else:
                     self._run_ffmpeg(
                         ff,
-                        ["-y", "-i", str(source), "-vn", "-c:a", "libmp3lame", "-q:a", "0", str(final_path)],
-                        duration=info.get("duration") or 0,
+                        ["-y", "-i", str(source), "-vn", "-c:a", "libmp3lame",
+                         "-q:a", "0", str(final_path)],
+                        duration=source_duration or info.get("duration") or 0,
                     )
             else:
                 final_path = Path(self.folder) / f"{safe_title}.mp4"
-                if source_is_h264:
+
+                if self.custom:
+                    input_start = 0.0 if source_duration <= self.clip_duration + 2.0 else self.clip_start_sec
+                    args = [
+                        "-y", "-ss", f"{input_start:.3f}", "-i", str(source),
+                        "-t", f"{self.clip_duration:.3f}",
+                        "-map", "0:v:0", "-map", "0:a:0?",
+                        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+                        "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-b:a", "192k",
+                        "-movflags", "+faststart", str(final_path)
+                    ]
+                    self._run_ffmpeg(ff, args, duration=self.clip_duration)
+
+                elif source_is_h264:
                     args = [
                         "-y", "-i", str(source),
                         "-map", "0:v:0", "-map", "0:a:0?",
                         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                         "-movflags", "+faststart", str(final_path)
                     ]
-                    self._run_ffmpeg(ff, args, duration=info.get("duration") or 0)
+                    self._run_ffmpeg(ff, args, duration=source_duration or info.get("duration") or 0)
                 else:
                     args = [
                         "-y", "-i", str(source),
@@ -257,7 +295,8 @@ class DownloadWorker(QThread):
                         "-c:a", "aac", "-b:a", "192k",
                         "-movflags", "+faststart", str(final_path)
                     ]
-                    self._run_ffmpeg(ff, args, duration=info.get("duration") or 0)
+                    self._run_ffmpeg(ff, args, duration=source_duration or info.get("duration") or 0)
+
 
             if self.cancel_requested:
                 raise yt_dlp.utils.DownloadError("SMF_CANCELLED")
@@ -276,6 +315,28 @@ class DownloadWorker(QThread):
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
             self.current_process = None
+
+    def _probe_duration(self, ff: str, source: Path) -> float:
+        probe = Path(ff).with_name(
+            "ffprobe.exe" if os.name == "nt" else "ffprobe"
+        )
+        if not probe.exists():
+            return 0.0
+        try:
+            p = subprocess.run(
+                [
+                    str(probe), "-v", "error", "-show_entries",
+                    "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
+                    str(source)
+                ],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30
+            )
+            if p.returncode == 0:
+                return float(p.stdout.strip())
+        except (ValueError, OSError, subprocess.SubprocessError):
+            pass
+        return 0.0
 
     def _run_ffmpeg(self, ff: str, args: list[str], duration: float = 0):
         if self.cancel_requested:
